@@ -1,0 +1,14 @@
+# Raw input / intermediate files
+propertoes.txt
+Bentonville_Rentals.xlsx
+House_Search.xlsx
+
+# Build scripts (local use only)
+build_xlsx.py
+export_data.py
+
+# Claude session files
+.claude/
+
+# macOS
+.DS_Store
