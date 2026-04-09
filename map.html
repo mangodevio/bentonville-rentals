@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bentonville Rentals</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
@@ -116,6 +116,20 @@
   }
   .friend-banner.show{display:block}
 
+  /* ── sort bar ── */
+  #sort-bar{
+    display:none;gap:6px;padding:8px 12px;background:var(--surface);
+    border-bottom:1px solid var(--border);align-items:center;flex-shrink:0
+  }
+  #sort-bar.active{display:flex}
+  #sort-bar span{font-size:11px;font-weight:600;color:var(--text2);flex-shrink:0}
+  .sort-btn{
+    flex-shrink:0;padding:4px 10px;border-radius:20px;border:1px solid var(--border);
+    font-size:11px;font-weight:600;cursor:pointer;background:transparent;
+    color:var(--text2);white-space:nowrap;transition:.15s
+  }
+  .sort-btn.active{background:var(--surface2);color:var(--text);border-color:var(--text2)}
+
   /* ── list view ── */
   #list-view{flex:1;overflow-y:auto;display:none;padding:12px}
   #list-view.active{display:block}
@@ -185,6 +199,16 @@
     <button class="skin-btn"        data-skin="satellite"  onclick="setSkin('satellite')">🛰 Satellite</button>
     <button class="skin-btn"        data-skin="terrain"    onclick="setSkin('terrain')">🗻 Terrain</button>
     <button class="skin-btn"        data-skin="watercolor" onclick="setSkin('watercolor')">🎨 Watercolor</button>
+  </div>
+
+  <div id="sort-bar">
+    <span>Sort:</span>
+    <button class="sort-btn active" data-sort="default" onclick="setSort('default')">Default</button>
+    <button class="sort-btn" data-sort="price-asc"  onclick="setSort('price-asc')">Price ↑</button>
+    <button class="sort-btn" data-sort="price-desc" onclick="setSort('price-desc')">Price ↓</button>
+    <button class="sort-btn" data-sort="mosque"     onclick="setSort('mosque')">Mosque ↑</button>
+    <button class="sort-btn" data-sort="work"       onclick="setSort('work')">Work ↑</button>
+    <button class="sort-btn" data-sort="movein"     onclick="setSort('movein')">Move-in ↑</button>
   </div>
 
   <div id="map-view">
@@ -555,7 +579,7 @@ function renderListView() {
   const friendNote = friend ? `<div style="background:#3b0764;border-radius:8px;padding:10px;margin-bottom:14px;font-size:12px;color:#d8b4fe">📌 Friend's place: <b>${friend.name}</b> — showing distances from there</div>` : '';
 
   const html = groups.map(g => {
-    const items = PROPS.filter(g.filter).map(p => {
+    const items = sortProps(PROPS.filter(g.filter)).map(p => {
       const distF = friend && friend.id !== p.id ? haversine(friend, p) : null;
       const isDuplex = friend && friend.duplex && p.duplex === friend.duplex;
       return `<div class="list-card" onclick="selectProp('${p.id}');setTab('map')">
@@ -590,11 +614,36 @@ function renderListView() {
   document.getElementById('list-view').innerHTML = friendNote + html;
 }
 
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+function parseMoveinDate(p) {
+  // Strip decorators: ~, ⚠️, (now), (date passed), etc.
+  const s = (p.movein || '').replace(/[~⚠️]/g,'').replace(/\(.*?\)/g,'').trim();
+  const d = new Date(s);
+  return isNaN(d) ? new Date('2099-01-01') : d;
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+let currentSort = 'default';
+function setSort(s) {
+  currentSort = s;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === s));
+  renderListView();
+}
+function sortProps(items) {
+  if (currentSort === 'price-asc')  return [...items].sort((a,b) => a.price - b.price);
+  if (currentSort === 'price-desc') return [...items].sort((a,b) => b.price - a.price);
+  if (currentSort === 'mosque')     return [...items].sort((a,b) => haversine(a, MOSQUE) - haversine(b, MOSQUE));
+  if (currentSort === 'work')       return [...items].sort((a,b) => haversine(a, WORK)   - haversine(b, WORK));
+  if (currentSort === 'movein')     return [...items].sort((a,b) => parseMoveinDate(a) - parseMoveinDate(b));
+  return items;
+}
+
 // ── Tab switch ────────────────────────────────────────────────────────────────
 function setTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (tab==='map'&&i===0)||(tab==='list'&&i===1)));
   document.getElementById('map-view').style.display  = tab === 'map'  ? 'block' : 'none';
   document.getElementById('list-view').classList.toggle('active', tab === 'list');
+  document.getElementById('sort-bar').classList.toggle('active', tab === 'list');
   if (tab === 'list') renderListView();
   if (tab === 'map')  setTimeout(() => map.invalidateSize(), 50);
 }
