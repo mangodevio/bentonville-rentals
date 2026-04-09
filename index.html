@@ -3,8 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bentonville Rentals</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<title>RentMap</title>
+<!-- preconnect to CDNs so DNS+TLS happen before they're needed -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="preconnect" href="https://a.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://b.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://c.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://tiles.stadiamaps.com">
+<!-- leaflet CSS: non-render-blocking on first paint -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"></noscript>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -152,7 +160,7 @@
   /* ── legend ── */
   #legend{
     position:absolute;top:10px;right:10px;z-index:800;
-    background:var(--surface)dd;backdrop-filter:blur(8px);
+    background:#1e293bee;
     border-radius:8px;padding:8px 10px;border:1px solid var(--border);
     font-size:11px;display:flex;flex-direction:column;gap:4px;min-width:130px
   }
@@ -207,7 +215,8 @@
 
   /* ── leaflet overrides ── */
   .leaflet-container{background:#1a2332}
-  .leaflet-tile{filter:brightness(.75) saturate(.6)}
+  /* tile filter only applied when dark skin is active — avoids GPU recomposition cost on every tile for light skins */
+  .skin-dark .leaflet-tile{filter:brightness(.72) saturate(.55)}
   .prop-marker{
     width:32px;height:32px;border-radius:50%;border:2.5px solid #fff4;
     display:flex;align-items:center;justify-content:center;font-size:14px;
@@ -233,7 +242,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>📍 Bentonville Rentals</h1>
+    <h1>📍 RentMap</h1>
     <div class="tab-btns">
       <button class="tab-btn active" onclick="setTab('map')">Map</button>
       <button class="tab-btn" onclick="setTab('list')">List</button>
@@ -305,7 +314,7 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script>
 // ── Data ─────────────────────────────────────────────────────────────────────
 const MOSQUE  = { id:'mosque',  type:'special', name:'Masjid',                sub:'1801 SW 2nd St',    lat:36.371887, lng:-94.234221, color:'#7c3aed', icon:'🕌' };
@@ -457,6 +466,7 @@ const leafletMarkers = {};
 // ── Map init ──────────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: false, attributionControl: false })
               .setView([36.3530, -94.2260], 14);
+document.getElementById('map').classList.add('skin-dark'); // default skin
 // ── Tile skins — swap the URL to change the map look ─────────────────────────
 // 1. Dark (current)    → CartoDB Dark Matter
 // 2. Minimal/clean     → CartoDB Positron
@@ -476,13 +486,13 @@ let activeTile = L.tileLayer(TILES.dark, { maxZoom: 19 }).addTo(map);
 
 function setSkin(name) {
   map.removeLayer(activeTile);
-  activeTile = L.tileLayer(TILES[name], { maxZoom: 19 }).addTo(map);
-  // push tile layer behind markers
+  activeTile = L.tileLayer(TILES[name], { maxZoom: 19, keepBuffer: 2 }).addTo(map);
   activeTile.bringToBack();
   document.querySelectorAll('.skin-btn').forEach(b => b.classList.toggle('active', b.dataset.skin === name));
-  // flip legend/text to light if switching to light skins
-  const light = ['minimal','satellite','terrain','watercolor'].includes(name);
-  document.getElementById('legend').style.background = light ? '#ffffffdd' : 'var(--surface)dd';
+  const mapEl = document.getElementById('map');
+  mapEl.className = name === 'dark' ? 'skin-dark' : '';
+  const light = name !== 'dark';
+  document.getElementById('legend').style.background = light ? '#ffffffee' : '#1e293bee';
   document.getElementById('legend').style.color = light ? '#1e293b' : 'var(--text)';
 }
 L.control.zoom({ position: 'topright' }).addTo(map);
