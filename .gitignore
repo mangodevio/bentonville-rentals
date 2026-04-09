@@ -10,5 +10,8 @@ export_data.py
 # Claude session files
 .claude/
 
+# Dependencies
+node_modules/
+
 # macOS
 .DS_Store

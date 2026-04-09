@@ -159,6 +159,52 @@
   .leg{display:flex;align-items:center;gap:6px}
   .leg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 
+  /* ── FAB (add property button) ── */
+  #fab{
+    position:absolute;bottom:calc(60px + var(--safe-bottom));right:14px;z-index:850;
+    width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;
+    background:var(--blue);color:#fff;font-size:24px;font-weight:300;
+    box-shadow:0 4px 16px #0006;display:flex;align-items:center;justify-content:center;
+    transition:.15s;line-height:1
+  }
+  #fab:active{transform:scale(.92)}
+
+  /* ── Add property modal ── */
+  #modal-overlay{
+    position:fixed;inset:0;z-index:2000;background:#000a;
+    display:none;align-items:flex-end;justify-content:center
+  }
+  #modal-overlay.show{display:flex}
+  #modal-box{
+    background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;
+    width:100%;max-width:480px;padding:20px 20px calc(20px + var(--safe-bottom));
+    border-top:1px solid var(--border)
+  }
+  #modal-box h2{font-size:16px;font-weight:700;margin-bottom:16px}
+  .modal-field{margin-bottom:12px}
+  .modal-field label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:5px}
+  .modal-input{
+    width:100%;padding:11px 12px;background:var(--surface2);border:1px solid var(--border);
+    border-radius:8px;color:var(--text);font-size:14px;outline:none;
+    font-family:inherit;transition:.15s
+  }
+  .modal-input:focus{border-color:var(--blue)}
+  .modal-input::placeholder{color:var(--text2)}
+  #modal-status{
+    font-size:12px;color:var(--text2);min-height:18px;margin-bottom:12px;
+    display:flex;align-items:center;gap:6px
+  }
+  #modal-status.err{color:#fca5a5}
+  #modal-status.ok{color:#86efac}
+  .modal-btns{display:flex;gap:8px}
+  .modal-btn{
+    flex:1;padding:13px;border-radius:8px;border:none;font-size:14px;
+    font-weight:700;cursor:pointer;font-family:inherit;transition:.15s
+  }
+  .modal-btn-primary{background:var(--blue);color:#fff}
+  .modal-btn-primary:disabled{background:var(--surface2);color:var(--text2);cursor:default}
+  .modal-btn-cancel{background:var(--surface2);color:var(--text2)}
+
   /* ── leaflet overrides ── */
   .leaflet-container{background:#1a2332}
   .leaflet-tile{filter:brightness(.75) saturate(.6)}
@@ -230,6 +276,33 @@
   </div>
 
   <div id="list-view"></div>
+</div>
+
+<!-- FAB -->
+<button id="fab" onclick="openModal()" title="Add a property">+</button>
+
+<!-- Add property modal -->
+<div id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div id="modal-box">
+    <h2>📍 Add a Property</h2>
+    <div class="modal-field">
+      <label>Address</label>
+      <input id="modal-addr" class="modal-input" type="text" placeholder="e.g. 123 Main St, Bentonville, AR" autocomplete="off"/>
+    </div>
+    <div class="modal-field">
+      <label>Your name <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <input id="modal-name" class="modal-input" type="text" placeholder="e.g. Ashfaq"/>
+    </div>
+    <div class="modal-field">
+      <label>Notes <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <input id="modal-notes" class="modal-input" type="text" placeholder="e.g. $1,600/mo, 3bd/2ba"/>
+    </div>
+    <div id="modal-status"></div>
+    <div class="modal-btns">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancel</button>
+      <button id="modal-submit" class="modal-btn modal-btn-primary" onclick="submitCustomProp()">Add to Map</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -439,8 +512,7 @@ DESTS.forEach(d => {
 // Add property markers
 PROPS.forEach(p => {
   const color = STATUS_COLOR[p.status] || '#64748b';
-  const emoji = p.id.includes('bldg') ? '🏢' : '🏠';
-  const marker = L.marker([p.lat, p.lng], { icon: makeIcon(color, emoji) }).addTo(map);
+  const marker = L.marker([p.lat, p.lng], { icon: makeIcon(color, propEmoji(p)) }).addTo(map);
   marker.on('click', () => selectProp(p.id));
   leafletMarkers[p.id] = { marker, color };
 });
@@ -459,19 +531,24 @@ Object.values(duplexGroups).forEach(grp => {
 });
 
 // ── Select prop ───────────────────────────────────────────────────────────────
+function propEmoji(p) {
+  if (!p) return '🏠';
+  if (p.isCustom) return '📍';
+  if (p.id.includes('bldg')) return '🏢';
+  return '🏠';
+}
+
 function selectProp(id) {
   // reset old
   if (selectedId && leafletMarkers[selectedId]) {
     const { marker, color } = leafletMarkers[selectedId];
-    const p = PROPS.find(p=>p.id===selectedId);
-    const emoji = selectedId.includes('bldg') ? '🏢' : '🏠';
-    marker.setIcon(makeIcon(color, emoji, false));
+    const oldP = PROPS.find(p=>p.id===selectedId);
+    marker.setIcon(makeIcon(color, propEmoji(oldP), false));
   }
   selectedId = id;
   const { marker, color } = leafletMarkers[id];
   const p = PROPS.find(p=>p.id===id);
-  const emoji = id.includes('bldg') ? '🏢' : '🏠';
-  marker.setIcon(makeIcon(color, emoji, true));
+  marker.setIcon(makeIcon(color, propEmoji(p), true));
   map.panTo([p.lat, p.lng], { animate: true, duration: 0.5 });
   renderSheet(p);
   openSheet();
@@ -565,14 +642,15 @@ function toggleFriend(id) {
 // ── List view ─────────────────────────────────────────────────────────────────
 function renderListView() {
   const groups = [
-    { label: '✅ Available Now / Soon', filter: p => p.status === 'available' && !p.id.includes('bldg') },
-    { label: '⚠️ Check Availability (date passed)', filter: p => p.status === 'check' },
+    { label: '✅ Available Now / Soon', filter: p => p.status === 'available' && !p.id.includes('bldg') && !p.isCustom },
+    { label: '⚠️ Check Availability (date passed)', filter: p => p.status === 'check' && !p.isCustom },
     { label: '🏘️ Duplex Pairs (both units listed)', filter: p => {
-        if (!p.duplex || p.id.includes('bldg')) return false;
+        if (!p.duplex || p.id.includes('bldg') || p.isCustom) return false;
         const count = PROPS.filter(o => o.duplex === p.duplex).length;
         return count >= 2;
       }
     },
+    { label: '📍 Added Properties', filter: p => !!p.isCustom },
   ];
 
   const friend = PROPS.find(p=>p.id===friendId);
@@ -582,13 +660,14 @@ function renderListView() {
     const items = sortProps(PROPS.filter(g.filter)).map(p => {
       const distF = friend && friend.id !== p.id ? haversine(friend, p) : null;
       const isDuplex = friend && friend.duplex && p.duplex === friend.duplex;
-      return `<div class="list-card" onclick="selectProp('${p.id}');setTab('map')">
+      const clickFn = p.isCustom ? `selectCustom('${p.id}');setTab('map')` : `selectProp('${p.id}');setTab('map')`;
+      return `<div class="list-card" onclick="${clickFn}">
         <div class="list-card-row">
           <div>
             <div class="list-card-name">${p.name}</div>
-            <div class="list-card-sub">${p.sub} · ${p.beds}bd/${p.baths}ba · ${p.sqft}sqft</div>
+            <div class="list-card-sub">${p.isCustom ? (p.notes || 'Custom property') : `${p.sub} · ${p.beds}bd/${p.baths}ba · ${p.sqft}sqft`}</div>
           </div>
-          <div class="list-card-price">${p.priceStr}</div>
+          ${p.isCustom ? '<span class="badge" style="background:#431407;color:#fb923c">📍 Custom</span>' : `<div class="list-card-price">${p.priceStr}</div>`}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin:8px 0">
           ${DESTS.map(d => {
@@ -601,8 +680,8 @@ function renderListView() {
           }).join('')}
         </div>
         <div class="list-card-badges">
-          ${statusBadge(p)}
-          <span class="badge badge-gray">📅 ${p.movein}</span>
+          ${p.isCustom ? (p.addedBy ? `<span class="badge badge-gray">👤 ${p.addedBy}</span>` : '') : statusBadge(p)}
+          ${!p.isCustom ? `<span class="badge badge-gray">📅 ${p.movein}</span>` : ''}
           ${distF !== null ? `<span class="badge" style="background:${isDuplex?'#3b0764':'#1e293b'};color:${isDuplex?'#d8b4fe':'#94a3b8'}">${isDuplex?'🏘️ DUPLEX · ':''}${fmtDistShort(distF)}</span>` : ''}
         </div>
       </div>`;
@@ -648,8 +727,211 @@ function setTab(tab) {
   if (tab === 'map')  setTimeout(() => map.invalidateSize(), 50);
 }
 
+// ── Custom properties (Neon via Netlify Function) ────────────────────────────
+const API = '/api/props';
+
+function customPropToLocal(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    sub: row.address || 'Custom property',
+    lat: parseFloat(row.lat),
+    lng: parseFloat(row.lng),
+    price: null,
+    priceStr: '—',
+    beds: '?', baths: '?', sqft: '?',
+    movein: '—',
+    status: 'available',
+    duplex: null,
+    manager: row.added_by ? `Added by ${row.added_by}` : 'Added manually',
+    sources: 'Custom',
+    notes: row.notes || '',
+    url: '',
+    isCustom: true,
+    addedBy: row.added_by || null,
+  };
+}
+
+function addCustomMarker(p) {
+  const marker = L.marker([p.lat, p.lng], { icon: makeIcon('#f97316', '📍') }).addTo(map);
+  marker.on('click', () => selectCustom(p.id));
+  leafletMarkers[p.id] = { marker, color: '#f97316' };
+}
+
+function selectCustom(id) {
+  const p = PROPS.find(x => x.id === id);
+  if (!p) return;
+  if (selectedId && leafletMarkers[selectedId]) {
+    const old = leafletMarkers[selectedId];
+    const oldP = PROPS.find(x => x.id === selectedId);
+    if (oldP) {
+      const emoji = oldP.isCustom ? '📍' : (selectedId.includes('bldg') ? '🏢' : '🏠');
+      old.marker.setIcon(makeIcon(old.color, emoji, false));
+    }
+  }
+  selectedId = id;
+  leafletMarkers[id].marker.setIcon(makeIcon('#f97316', '📍', true));
+  map.panTo([p.lat, p.lng], { animate: true, duration: 0.5 });
+  renderCustomSheet(p);
+  openSheet();
+}
+
+function renderCustomSheet(p) {
+  document.getElementById('sheet-peek').textContent = p.name;
+  document.getElementById('sheet-content').innerHTML = `
+    <div class="prop-header">
+      <div>
+        <div class="prop-name">${p.name}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${p.sub}</div>
+      </div>
+      <span class="badge" style="background:#431407;color:#fb923c;align-self:flex-start">📍 Custom</span>
+    </div>
+    <div class="prop-meta">
+      ${p.addedBy ? `<span class="badge badge-gray">👤 Added by ${p.addedBy}</span>` : ''}
+      ${p.notes ? `<span class="badge badge-gray">ℹ️ ${p.notes}</span>` : ''}
+    </div>
+    <div class="dist-row">
+      ${DESTS.map(d => {
+        const {mi, mins} = driveTo(p, d);
+        return `<div class="dist-card" style="border-left:3px solid ${d.color}">
+          <div class="dist-label" style="color:${d.color}">${d.icon} ${d.name.split(' ')[0]}</div>
+          <div class="dist-val">${mi} mi</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;font-weight:600">~${mins} min drive</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <button onclick="deleteCustomProp('${p.id}')" style="width:100%;padding:11px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#fca5a5;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">
+      🗑 Remove this property
+    </button>
+  `;
+}
+
+async function loadCustomProps() {
+  try {
+    const res = await fetch(API);
+    if (!res.ok) return;
+    const rows = await res.json();
+    rows.forEach(row => {
+      if (PROPS.find(p => p.id === row.id)) return; // already loaded
+      const p = customPropToLocal(row);
+      PROPS.push(p);
+      addCustomMarker(p);
+    });
+    renderListView();
+  } catch(e) {
+    console.warn('Could not load custom props:', e.message);
+  }
+}
+
+async function saveCustomProp(data) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Server error ${res.status}`);
+}
+
+async function deleteCustomProp(id) {
+  try {
+    await fetch(`${API}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    // Remove from PROPS
+    const idx = PROPS.findIndex(p => p.id === id);
+    if (idx !== -1) PROPS.splice(idx, 1);
+    // Remove marker
+    if (leafletMarkers[id]) {
+      map.removeLayer(leafletMarkers[id].marker);
+      delete leafletMarkers[id];
+    }
+    closeSheet();
+    renderListView();
+  } catch(e) {
+    alert('Could not remove property.');
+  }
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('modal-addr').value  = '';
+  document.getElementById('modal-name').value  = '';
+  document.getElementById('modal-notes').value = '';
+  setModalStatus('');
+  document.getElementById('modal-submit').disabled = false;
+  document.getElementById('modal-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('modal-addr').focus(), 100);
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+function setModalStatus(msg, type='') {
+  const el = document.getElementById('modal-status');
+  el.textContent = msg;
+  el.className = type ? `${type}` : '';
+}
+
+async function geocodeAddress(addr) {
+  const q = encodeURIComponent(addr);
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`, {
+    headers: { 'Accept-Language': 'en' }
+  });
+  const data = await res.json();
+  if (!data.length) throw new Error('Address not found — try adding ", AR" or a zip code');
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+}
+
+async function submitCustomProp() {
+  const addr  = document.getElementById('modal-addr').value.trim();
+  const name  = document.getElementById('modal-name').value.trim();
+  const notes = document.getElementById('modal-notes').value.trim();
+
+  if (!addr) { setModalStatus('Please enter an address.', 'err'); return; }
+
+  const btn = document.getElementById('modal-submit');
+  btn.disabled = true;
+  setModalStatus('🔍 Looking up address…');
+
+  try {
+    const geo = await geocodeAddress(addr);
+    setModalStatus('💾 Saving…');
+
+    const id = 'custom-' + Date.now();
+    const data = {
+      id,
+      name: addr,
+      address: geo.display,
+      lat: geo.lat,
+      lng: geo.lng,
+      added_by: name || null,
+      notes: notes || null,
+    };
+
+    await saveCustomProp(data);
+
+    const p = customPropToLocal({ ...data });
+    PROPS.push(p);
+    addCustomMarker(p);
+    renderListView();
+
+    closeModal();
+    selectCustom(id);
+    setTab('map');
+  } catch(e) {
+    setModalStatus(e.message || 'Something went wrong.', 'err');
+    btn.disabled = false;
+  }
+}
+
+// Enter key submits modal
+document.getElementById('modal-addr').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
+document.getElementById('modal-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
+document.getElementById('modal-notes').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderListView();
+loadCustomProps();
 
 // Swipe-down to close sheet
 let touchStartY = 0;

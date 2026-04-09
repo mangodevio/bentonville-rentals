@@ -1,0 +1,15 @@
+[build]
+  functions = "netlify/functions"
+  publish   = "."
+
+[[redirects]]
+  from   = "/api/props"
+  to     = "/.netlify/functions/props"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/props*"
+  to     = "/.netlify/functions/props"
+  status = 200
+  force  = true
