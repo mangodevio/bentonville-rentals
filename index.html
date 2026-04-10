@@ -167,15 +167,13 @@
   .leg{display:flex;align-items:center;gap:6px}
   .leg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 
-  /* ── FAB (add property button) ── */
+  /* ── Add button (header) ── */
   #fab{
-    position:absolute;bottom:calc(60px + var(--safe-bottom));right:14px;z-index:850;
-    width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;
-    background:var(--blue);color:#fff;font-size:24px;font-weight:300;
-    box-shadow:0 4px 16px #0006;display:flex;align-items:center;justify-content:center;
-    transition:.15s;line-height:1
+    padding:4px 10px;border-radius:6px;border:none;cursor:pointer;
+    background:var(--blue);color:#fff;font-size:13px;font-weight:600;
+    transition:.15s;white-space:nowrap;flex-shrink:0
   }
-  #fab:active{transform:scale(.92)}
+  #fab:active{opacity:.8}
 
   /* ── Add property modal ── */
   #modal-overlay{
@@ -276,6 +274,7 @@
       <button class="tab-btn active" onclick="setTab('map')">Map</button>
       <button class="tab-btn" onclick="setTab('list')">List</button>
     </div>
+    <button id="fab" onclick="openModal()" title="Add a property">+ Add</button>
   </header>
   <div id="skin-bar">
     <button class="skin-btn active" data-skin="minimal"   onclick="setSkin('minimal')">⬜ Clean</button>
@@ -312,9 +311,6 @@
 
   <div id="list-view"></div>
 </div>
-
-<!-- FAB -->
-<button id="fab" onclick="openModal()" title="Add a property">+</button>
 
 <!-- Add property modal -->
 <div id="modal-overlay" onclick="handleOverlayClick(event)">
