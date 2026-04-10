@@ -213,6 +213,35 @@
   .modal-btn-primary:disabled{background:var(--surface2);color:var(--text2);cursor:default}
   .modal-btn-cancel{background:var(--surface2);color:var(--text2)}
 
+  /* ── Address autocomplete ── */
+  #addr-suggestions{
+    position:absolute;top:100%;left:0;right:0;z-index:3000;
+    background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+    margin-top:2px;overflow:hidden;display:none
+  }
+  #addr-suggestions.show{display:block}
+  .addr-suggestion{
+    padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .addr-suggestion:last-child{border-bottom:none}
+  .addr-suggestion:active{background:var(--blue)}
+
+  /* ── Loading overlay ── */
+  #loading-overlay{
+    position:fixed;inset:0;z-index:9999;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px
+  }
+  #loading-overlay.hidden{display:none}
+  #loading-box{display:flex;flex-direction:column;align-items:center;gap:12px}
+  #loading-msg{font-size:14px;font-weight:600;color:var(--text2)}
+  .loading-spinner{
+    width:36px;height:36px;border-radius:50%;
+    border:3px solid var(--surface2);border-top-color:var(--blue);
+    animation:spin .7s linear infinite
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
   /* ── leaflet overrides ── */
   .leaflet-container{background:#1a2332}
   /* tile filter only applied when dark skin is active — avoids GPU recomposition cost on every tile for light skins */
@@ -249,11 +278,8 @@
     </div>
   </header>
   <div id="skin-bar">
-    <button class="skin-btn active" data-skin="dark"       onclick="setSkin('dark')">🌑 Dark</button>
-    <button class="skin-btn"        data-skin="minimal"    onclick="setSkin('minimal')">⬜ Clean</button>
-    <button class="skin-btn"        data-skin="satellite"  onclick="setSkin('satellite')">🛰 Satellite</button>
-    <button class="skin-btn"        data-skin="terrain"    onclick="setSkin('terrain')">🗻 Terrain</button>
-    <button class="skin-btn"        data-skin="watercolor" onclick="setSkin('watercolor')">🎨 Watercolor</button>
+    <button class="skin-btn active" data-skin="minimal"   onclick="setSkin('minimal')">⬜ Clean</button>
+    <button class="skin-btn"        data-skin="satellite" onclick="setSkin('satellite')">🛰 Satellite</button>
   </div>
 
   <div id="sort-bar">
@@ -294,9 +320,14 @@
 <div id="modal-overlay" onclick="handleOverlayClick(event)">
   <div id="modal-box">
     <h2>📍 Add a Property</h2>
-    <div class="modal-field">
+    <div class="modal-field" style="position:relative">
       <label>Address</label>
-      <input id="modal-addr" class="modal-input" type="text" placeholder="e.g. 123 Main St, Bentonville, AR" autocomplete="off"/>
+      <input id="modal-addr" class="modal-input" type="text" placeholder="Start typing an address…" autocomplete="off" oninput="onAddrInput(this.value)"/>
+      <div id="addr-suggestions"></div>
+    </div>
+    <div class="modal-field">
+      <label>Listing URL <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <input id="modal-url" class="modal-input" type="url" placeholder="e.g. https://zillow.com/…"/>
     </div>
     <div class="modal-field">
       <label>Your name <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
@@ -314,100 +345,37 @@
   </div>
 </div>
 
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div id="loading-box">
+    <div class="loading-spinner"></div>
+    <div id="loading-msg">Loading properties…</div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script>
-// ── Data ─────────────────────────────────────────────────────────────────────
-const MOSQUE  = { id:'mosque',  type:'special', name:'Masjid',                sub:'1801 SW 2nd St',    lat:36.371887, lng:-94.234221, color:'#7c3aed', icon:'🕌' };
-const WORK    = { id:'work',    type:'special', name:'DGTC (My Office)',      sub:'805 Moberly Ln',    lat:36.363539, lng:-94.183247, color:'#2563eb', icon:'💼' };
-const WALMART = { id:'walmart', type:'special', name:'Walmart Home Office',   sub:'1600 SE 8th St',    lat:36.363170, lng:-94.191317, color:'#0071ce', icon:'🛒' };
-const DESTS   = [MOSQUE, WORK, WALMART];
+// ── Data (populated from DB on init) ─────────────────────────────────────────
+let PROPS = [];
+let DESTS = [];
 
-// status: available | check | past
-// duplex: string key — properties sharing the same duplex key are in the same building
-const PROPS = [
-  // ── SW Casuarina Dr (lat 36.34630 ± .00008 for unit offset) ───────────────
-  { id:'1406-cas-bldg', name:'1406 SW Casuarina Dr', sub:'Building overview', lat:36.34630, lng:-94.23000,
-    price:null, priceStr:'$1,625–$1,695', beds:3, baths:2.5, sqft:1400,
-    movein:'See units', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow (building)', notes:'4-unit building page', url:'https://www.zillow.com/b/1406-sw-casuarina-dr-bentonville-ar-CdcVVs/' },
-
-  { id:'1406-cas-1', name:'1406 SW Casuarina Dr #1', sub:'Unit 1', lat:36.34638, lng:-94.23000,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'May 9, 2026', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'$1,650 deposit. $40 app fee.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/82654' },
-
-  { id:'1500-cas-2', name:'1500 SW Casuarina Dr #2', sub:'Unit 2', lat:36.34622, lng:-94.22878,
-    price:1695, priceStr:'$1,695', beds:3, baths:2.5, sqft:1400,
-    movein:'Apr 11, 2026', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'2024 build. Pet-friendly.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/82710' },
-
-  { id:'1602-cas-1', name:'1602 SW Casuarina Dr #1', sub:'Unit 1', lat:36.34638, lng:-94.22745,
-    price:1625, priceStr:'$1,625', beds:3, baths:2.5, sqft:1400,
-    movein:'Mar 7, 2026 ⚠️', status:'check', duplex:'1602-cas', manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'Avail date passed – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/80909' },
-
-  { id:'1602-cas-2', name:'1602 SW Casuarina Dr #2', sub:'Unit 2', lat:36.34622, lng:-94.22745,
-    price:1625, priceStr:'$1,625', beds:3, baths:2.5, sqft:1400,
-    movein:'Apr 11, 2026', status:'available', duplex:'1602-cas', manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'Pet-friendly.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/80908' },
-
-  { id:'1704-cas-1', name:'1704 SW Casuarina Dr #1', sub:'Unit 1 · 1st mo FREE', lat:36.34638, lng:-94.22613,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'~Apr 2, 2026 ⚠️', status:'check', duplex:'1704-cas', manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'1st month free. Estimated date – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/92961' },
-
-  { id:'1704-cas-2', name:'1704 SW Casuarina Dr #2', sub:'Unit 2 · 1st mo FREE', lat:36.34622, lng:-94.22613,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'~Apr 2, 2026 ⚠️', status:'check', duplex:'1704-cas', manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'1st month free. Estimated date – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/92962' },
-
-  { id:'1800-cas-2', name:'1800 SW Casuarina Dr #2', sub:'Unit 2', lat:36.34622, lng:-94.22488,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'~Feb 3, 2026 (now)', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow only', notes:'63+ days on market.', url:'https://www.zillow.com/homedetails/1800-SW-Casuarina-Dr-2-Bentonville-AR-72712/460229143_zpid/' },
-
-  // ── SW Poigai Way (lat 36.34552 ± .00008) ────────────────────────────────
-  { id:'1405-poi-1', name:'1405 SW Poigai Way #1', sub:'Unit 1 · RE/MAX', lat:36.34552, lng:-94.23008,
-    price:1650, priceStr:'$1,650', beds:3, baths:3, sqft:1400,
-    movein:'Available now', status:'available', duplex:null, manager:'RE/MAX Real Estate Results',
-    sources:'Zillow only', notes:'3 full baths. No pets.', url:'https://www.zillow.com/homedetails/1405-SW-Poigai-Way-1-Bentonville-AR-72712/446728738_zpid/' },
-
-  { id:'1509-poi-1', name:'1509 SW Poigai Way #1', sub:'Unit 1', lat:36.34552, lng:-94.22873,
-    price:1695, priceStr:'$1,695', beds:3, baths:2.5, sqft:1400,
-    movein:'Feb 7, 2026 ⚠️', status:'check', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'Avail date passed – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/86651' },
-
-  { id:'1601-poi-1', name:'1601 SW Poigai Way #1', sub:'Unit 1', lat:36.34560, lng:-94.22753,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'May 9, 2026', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'$1,650 deposit.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/85746' },
-
-  { id:'1602-poi-1', name:'1602 SW Poigai Way #1', sub:'Unit 1', lat:36.34544, lng:-94.22751,
-    price:1625, priceStr:'$1,625', beds:3, baths:2.5, sqft:1400,
-    movein:'Mar 7, 2026 ⚠️', status:'check', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'Avail date passed – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/86697' },
-
-  { id:'1606-poi-1', name:'1606 SW Poigai Way #1', sub:'Unit 1', lat:36.34560, lng:-94.22747,
-    price:1695, priceStr:'$1,695', beds:3, baths:2.5, sqft:1400,
-    movein:'Apr 11, 2026', status:'available', duplex:null, manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'Pet-friendly.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/86984' },
-
-  { id:'1702-poi-1', name:'1702 SW Poigai Way #1', sub:'Unit 1 · 1st mo FREE', lat:36.34560, lng:-94.22622,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'~Mar 20, 2026 ⚠️', status:'check', duplex:'1702-poi', manager:'Prestige NWA',
-    sources:'Zillow + Prestige', notes:'1st month free. Avail date passed – verify.', url:'https://prestigenwa.managebuilding.com/Resident/public/rentals/93128' },
-
-  { id:'1702-poi-2', name:'1702 SW Poigai Way #2', sub:'Unit 2', lat:36.34544, lng:-94.22622,
-    price:1650, priceStr:'$1,650', beds:3, baths:2.5, sqft:1400,
-    movein:'Feb 4, 2026 (now)', status:'available', duplex:'1702-poi', manager:'Prestige NWA',
-    sources:'Zillow only', notes:'62+ days on market. Also on RE/MAX.', url:'https://www.zillow.com/homedetails/1702-SW-Poigai-Way-2-Bentonville-AR-72713/460229149_zpid/' },
-
-  // ── Buckeye Crossing Townhomes (apartment complex) ────────────────────────
-  { id:'buckeye', name:'Buckeye Crossing Townhomes', sub:'152-unit complex · 2019 build', lat:36.334671, lng:-94.243179,
-    price:1449, priceStr:'$1,449+', beds:3, baths:2.5, sqft:1400,
-    movein:'Contact for availability', status:'available', duplex:null, manager:'Buckeye Crossing',
-    sources:'buckeyecrossing.com', notes:'152 units. 2–3 bd, 1,277–1,440 sqft. (479) 360-8625', url:'https://www.buckeyecrossing.com/' },
-];
+function mapPropRow(r) {
+  return {
+    id: r.id, name: r.name, sub: r.sub_label || '',
+    lat: +r.lat, lng: +r.lng,
+    price: r.price, priceStr: r.price_str || '—',
+    beds: r.beds, baths: r.baths, sqft: r.sqft,
+    movein: r.move_in || '—',
+    status: r.status || 'available',
+    duplex: r.duplex_key || null,
+    manager: r.manager || '', sources: r.sources || '',
+    notes: r.notes || '', url: r.url || '',
+    isCustom: !!r.is_custom, addedBy: r.added_by || null,
+  };
+}
+function mapLandmarkRow(r) {
+  return { id: r.id, type: 'special', name: r.name, sub: r.address || '', lat: +r.lat, lng: +r.lng, color: r.color || '#2563eb', icon: r.icon || '📍' };
+}
 
 // ── Haversine distance (meters) ───────────────────────────────────────────────
 function haversine(a, b) {
@@ -466,32 +434,19 @@ const leafletMarkers = {};
 // ── Map init ──────────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: false, attributionControl: false })
               .setView([36.3530, -94.2260], 14);
-document.getElementById('map').classList.add('skin-dark'); // default skin
-// ── Tile skins — swap the URL to change the map look ─────────────────────────
-// 1. Dark (current)    → CartoDB Dark Matter
-// 2. Minimal/clean     → CartoDB Positron
-// 3. Satellite         → ESRI World Imagery
-// 4. Terrain           → Stadia Stamen Terrain
-// 5. Watercolor        → Stadia Stamen Watercolor
-// 6. Original OSM      → openstreetmap.org
+
 const TILES = {
-  dark:      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   minimal:   'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
   satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  terrain:   'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
-  watercolor:'https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg',
-  osm:       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
 };
-let activeTile = L.tileLayer(TILES.dark, { maxZoom: 19 }).addTo(map);
+let activeTile = L.tileLayer(TILES.minimal, { maxZoom: 19, keepBuffer: 2 }).addTo(map);
 
 function setSkin(name) {
   map.removeLayer(activeTile);
   activeTile = L.tileLayer(TILES[name], { maxZoom: 19, keepBuffer: 2 }).addTo(map);
   activeTile.bringToBack();
   document.querySelectorAll('.skin-btn').forEach(b => b.classList.toggle('active', b.dataset.skin === name));
-  const mapEl = document.getElementById('map');
-  mapEl.className = name === 'dark' ? 'skin-dark' : '';
-  const light = name !== 'dark';
+  const light = name !== 'satellite';
   document.getElementById('legend').style.background = light ? '#ffffffee' : '#1e293bee';
   document.getElementById('legend').style.color = light ? '#1e293b' : 'var(--text)';
 }
@@ -512,33 +467,41 @@ function makeSpecialIcon(color, emoji) {
   });
 }
 
-// Add special markers
-DESTS.forEach(d => {
-  L.marker([d.lat, d.lng], { icon: makeSpecialIcon(d.color, d.icon) })
-    .bindPopup(`<b>${d.name}</b><br>${d.sub}`)
-    .addTo(map);
-});
+// ── Render markers (called after data loads) ──────────────────────────────────
+const duplexCircles = [];
+function renderMarkers() {
+  // Clear existing
+  Object.values(leafletMarkers).forEach(({marker}) => map.removeLayer(marker));
+  for (const k in leafletMarkers) delete leafletMarkers[k];
+  duplexCircles.forEach(c => map.removeLayer(c));
+  duplexCircles.length = 0;
 
-// Add property markers
-PROPS.forEach(p => {
-  const color = STATUS_COLOR[p.status] || '#64748b';
-  const marker = L.marker([p.lat, p.lng], { icon: makeIcon(color, propEmoji(p)) }).addTo(map);
-  marker.on('click', () => selectProp(p.id));
-  leafletMarkers[p.id] = { marker, color };
-});
+  // Landmark markers
+  DESTS.forEach(d => {
+    L.marker([d.lat, d.lng], { icon: makeSpecialIcon(d.color, d.icon) })
+      .bindPopup(`<b>${d.name}</b><br>${d.sub}`)
+      .addTo(map);
+  });
 
-// Draw duplex rings
-const duplexGroups = {};
-PROPS.forEach(p => { if (p.duplex) { (duplexGroups[p.duplex] = duplexGroups[p.duplex]||[]).push(p); } });
-Object.values(duplexGroups).forEach(grp => {
-  if (grp.length < 2) return;
-  const centerLat = grp.reduce((s,p)=>s+p.lat,0)/grp.length;
-  const centerLng = grp.reduce((s,p)=>s+p.lng,0)/grp.length;
-  L.circle([centerLat, centerLng], {
-    radius: 30, color: '#7c3aed', weight: 2,
-    dashArray: '4 4', fillOpacity: 0.06, fillColor: '#7c3aed'
-  }).addTo(map);
-});
+  // Property markers
+  PROPS.forEach(p => {
+    const color = p.isCustom ? '#f97316' : (STATUS_COLOR[p.status] || '#64748b');
+    const marker = L.marker([p.lat, p.lng], { icon: makeIcon(color, propEmoji(p)) }).addTo(map);
+    marker.on('click', () => p.isCustom ? selectCustom(p.id) : selectProp(p.id));
+    leafletMarkers[p.id] = { marker, color };
+  });
+
+  // Duplex rings
+  const groups = {};
+  PROPS.forEach(p => { if (p.duplex) { (groups[p.duplex] = groups[p.duplex]||[]).push(p); } });
+  Object.values(groups).forEach(grp => {
+    if (grp.length < 2) return;
+    const cLat = grp.reduce((s,p)=>s+p.lat,0)/grp.length;
+    const cLng = grp.reduce((s,p)=>s+p.lng,0)/grp.length;
+    const c = L.circle([cLat, cLng], { radius:30, color:'#7c3aed', weight:2, dashArray:'4 4', fillOpacity:0.06, fillColor:'#7c3aed' }).addTo(map);
+    duplexCircles.push(c);
+  });
+}
 
 // ── Select prop ───────────────────────────────────────────────────────────────
 function propEmoji(p) {
@@ -721,8 +684,8 @@ function setSort(s) {
 function sortProps(items) {
   if (currentSort === 'price-asc')  return [...items].sort((a,b) => a.price - b.price);
   if (currentSort === 'price-desc') return [...items].sort((a,b) => b.price - a.price);
-  if (currentSort === 'mosque')     return [...items].sort((a,b) => haversine(a, MOSQUE) - haversine(b, MOSQUE));
-  if (currentSort === 'work')       return [...items].sort((a,b) => haversine(a, WORK)   - haversine(b, WORK));
+  if (currentSort === 'mosque')     { const d=DESTS.find(x=>x.id==='mosque'); return d ? [...items].sort((a,b)=>haversine(a,d)-haversine(b,d)) : items; }
+  if (currentSort === 'work')       { const d=DESTS.find(x=>x.id==='work');   return d ? [...items].sort((a,b)=>haversine(a,d)-haversine(b,d)) : items; }
   if (currentSort === 'movein')     return [...items].sort((a,b) => parseMoveinDate(a) - parseMoveinDate(b));
   return items;
 }
@@ -733,51 +696,22 @@ function setTab(tab) {
   document.getElementById('map-view').style.display  = tab === 'map'  ? 'block' : 'none';
   document.getElementById('list-view').classList.toggle('active', tab === 'list');
   document.getElementById('sort-bar').classList.toggle('active', tab === 'list');
+  document.getElementById('skin-bar').style.display  = tab === 'list' ? 'none' : '';
   if (tab === 'list') renderListView();
   if (tab === 'map')  setTimeout(() => map.invalidateSize(), 50);
 }
 
-// ── Custom properties (Neon via Netlify Function) ────────────────────────────
+// ── API ───────────────────────────────────────────────────────────────────────
 const API = '/api/props';
 
-function customPropToLocal(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    sub: row.address || 'Custom property',
-    lat: parseFloat(row.lat),
-    lng: parseFloat(row.lng),
-    price: null,
-    priceStr: '—',
-    beds: '?', baths: '?', sqft: '?',
-    movein: '—',
-    status: 'available',
-    duplex: null,
-    manager: row.added_by ? `Added by ${row.added_by}` : 'Added manually',
-    sources: 'Custom',
-    notes: row.notes || '',
-    url: '',
-    isCustom: true,
-    addedBy: row.added_by || null,
-  };
-}
-
-function addCustomMarker(p) {
-  const marker = L.marker([p.lat, p.lng], { icon: makeIcon('#f97316', '📍') }).addTo(map);
-  marker.on('click', () => selectCustom(p.id));
-  leafletMarkers[p.id] = { marker, color: '#f97316' };
-}
-
+// ── Select custom ─────────────────────────────────────────────────────────────
 function selectCustom(id) {
   const p = PROPS.find(x => x.id === id);
   if (!p) return;
   if (selectedId && leafletMarkers[selectedId]) {
     const old = leafletMarkers[selectedId];
     const oldP = PROPS.find(x => x.id === selectedId);
-    if (oldP) {
-      const emoji = oldP.isCustom ? '📍' : (selectedId.includes('bldg') ? '🏢' : '🏠');
-      old.marker.setIcon(makeIcon(old.color, emoji, false));
-    }
+    old.marker.setIcon(makeIcon(old.color, propEmoji(oldP), false));
   }
   selectedId = id;
   leafletMarkers[id].marker.setIcon(makeIcon('#f97316', '📍', true));
@@ -792,79 +726,73 @@ function renderCustomSheet(p) {
     <div class="prop-header">
       <div>
         <div class="prop-name">${p.name}</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px">${p.sub}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${p.sub || ''}</div>
       </div>
       <span class="badge" style="background:#431407;color:#fb923c;align-self:flex-start">📍 Custom</span>
     </div>
     <div class="prop-meta">
       ${p.addedBy ? `<span class="badge badge-gray">👤 Added by ${p.addedBy}</span>` : ''}
-      ${p.notes ? `<span class="badge badge-gray">ℹ️ ${p.notes}</span>` : ''}
+      ${p.notes   ? `<span class="badge badge-gray">ℹ️ ${p.notes}</span>` : ''}
     </div>
     <div class="dist-row">
-      ${DESTS.map(d => {
-        const {mi, mins} = driveTo(p, d);
-        return `<div class="dist-card" style="border-left:3px solid ${d.color}">
-          <div class="dist-label" style="color:${d.color}">${d.icon} ${d.name.split(' ')[0]}</div>
-          <div class="dist-val">${mi} mi</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px;font-weight:600">~${mins} min drive</div>
-        </div>`;
-      }).join('')}
+      ${DESTS.map(d => { const {mi,mins}=driveTo(p,d); return `<div class="dist-card" style="border-left:3px solid ${d.color}"><div class="dist-label" style="color:${d.color}">${d.icon} ${d.name.split(' ')[0]}</div><div class="dist-val">${mi} mi</div><div style="font-size:11px;color:var(--text2);margin-top:2px;font-weight:600">~${mins} min drive</div></div>`; }).join('')}
     </div>
-    <button onclick="deleteCustomProp('${p.id}')" style="width:100%;padding:11px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#fca5a5;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">
-      🗑 Remove this property
-    </button>
+    ${p.url ? `<div style="margin:10px 0"><a href="${p.url}" target="_blank" style="color:#60a5fa;font-size:12px;font-weight:600">🔗 View listing →</a></div>` : ''}
+    <button onclick="deleteCustomProp('${p.id}')" style="width:100%;padding:11px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#fca5a5;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">🗑 Remove this property</button>
   `;
-}
-
-async function loadCustomProps() {
-  try {
-    const res = await fetch(API);
-    if (!res.ok) return;
-    const rows = await res.json();
-    rows.forEach(row => {
-      if (PROPS.find(p => p.id === row.id)) return; // already loaded
-      const p = customPropToLocal(row);
-      PROPS.push(p);
-      addCustomMarker(p);
-    });
-    renderListView();
-  } catch(e) {
-    console.warn('Could not load custom props:', e.message);
-  }
-}
-
-async function saveCustomProp(data) {
-  const res = await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`Server error ${res.status}`);
 }
 
 async function deleteCustomProp(id) {
   try {
-    await fetch(`${API}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    // Remove from PROPS
+    const res = await fetch(`${API}?id=${encodeURIComponent(id)}`, { method:'DELETE' });
+    if (!res.ok) throw new Error(`${res.status}`);
     const idx = PROPS.findIndex(p => p.id === id);
     if (idx !== -1) PROPS.splice(idx, 1);
-    // Remove marker
-    if (leafletMarkers[id]) {
-      map.removeLayer(leafletMarkers[id].marker);
-      delete leafletMarkers[id];
-    }
+    if (leafletMarkers[id]) { map.removeLayer(leafletMarkers[id].marker); delete leafletMarkers[id]; }
     closeSheet();
     renderListView();
-  } catch(e) {
-    alert('Could not remove property.');
-  }
+  } catch(e) { alert('Could not remove: ' + e.message); }
+}
+
+// ── Address autocomplete (debounced, min 3 chars) ─────────────────────────────
+let _acTimer = null;
+let _acSelected = null; // { lat, lng, display } when user picks a suggestion
+
+function onAddrInput(val) {
+  _acSelected = null; // clear any prior selection
+  clearTimeout(_acTimer);
+  const sug = document.getElementById('addr-suggestions');
+  if (val.length < 3) { sug.classList.remove('show'); sug.innerHTML=''; return; }
+  _acTimer = setTimeout(() => fetchSuggestions(val), 320);
+}
+
+async function fetchSuggestions(q) {
+  const sug = document.getElementById('addr-suggestions');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&countrycodes=us`, { headers:{'Accept-Language':'en'} });
+    const data = await res.json();
+    if (!data.length) { sug.classList.remove('show'); return; }
+    sug.innerHTML = data.map((r,i) =>
+      `<div class="addr-suggestion" onmousedown="pickSuggestion(${i})" data-lat="${r.lat}" data-lng="${r.lon}" data-display="${encodeURIComponent(r.display_name)}">${r.display_name}</div>`
+    ).join('');
+    sug.classList.add('show');
+  } catch(e) { sug.classList.remove('show'); }
+}
+
+function pickSuggestion(i) {
+  const sug = document.getElementById('addr-suggestions');
+  const el = sug.children[i];
+  if (!el) return;
+  _acSelected = { lat: +el.dataset.lat, lng: +el.dataset.lng, display: decodeURIComponent(el.dataset.display) };
+  document.getElementById('modal-addr').value = _acSelected.display.split(',').slice(0,3).join(',');
+  sug.classList.remove('show');
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function openModal() {
-  document.getElementById('modal-addr').value  = '';
-  document.getElementById('modal-name').value  = '';
-  document.getElementById('modal-notes').value = '';
+  ['modal-addr','modal-url','modal-name','modal-notes'].forEach(id => document.getElementById(id).value = '');
+  _acSelected = null;
+  document.getElementById('addr-suggestions').classList.remove('show');
   setModalStatus('');
   document.getElementById('modal-submit').disabled = false;
   document.getElementById('modal-overlay').classList.add('show');
@@ -872,6 +800,7 @@ function openModal() {
 }
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('show');
+  document.getElementById('addr-suggestions').classList.remove('show');
 }
 function handleOverlayClick(e) {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
@@ -879,52 +808,39 @@ function handleOverlayClick(e) {
 function setModalStatus(msg, type='') {
   const el = document.getElementById('modal-status');
   el.textContent = msg;
-  el.className = type ? `${type}` : '';
-}
-
-async function geocodeAddress(addr) {
-  const q = encodeURIComponent(addr);
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`, {
-    headers: { 'Accept-Language': 'en' }
-  });
-  const data = await res.json();
-  if (!data.length) throw new Error('Address not found — try adding ", AR" or a zip code');
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+  el.className = type || '';
 }
 
 async function submitCustomProp() {
   const addr  = document.getElementById('modal-addr').value.trim();
+  const url   = document.getElementById('modal-url').value.trim();
   const name  = document.getElementById('modal-name').value.trim();
   const notes = document.getElementById('modal-notes').value.trim();
-
   if (!addr) { setModalStatus('Please enter an address.', 'err'); return; }
 
   const btn = document.getElementById('modal-submit');
   btn.disabled = true;
-  setModalStatus('🔍 Looking up address…');
 
   try {
-    const geo = await geocodeAddress(addr);
+    let geo = _acSelected;
+    if (!geo) {
+      setModalStatus('🔍 Geocoding address…');
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1&countrycodes=us`, { headers:{'Accept-Language':'en'} });
+      const data = await res.json();
+      if (!data.length) throw new Error('Address not found — be more specific or pick from dropdown');
+      geo = { lat: +data[0].lat, lng: +data[0].lon, display: data[0].display_name };
+    }
+
     setModalStatus('💾 Saving…');
-
     const id = 'custom-' + Date.now();
-    const data = {
-      id,
-      name: addr,
-      address: geo.display,
-      lat: geo.lat,
-      lng: geo.lng,
-      added_by: name || null,
-      notes: notes || null,
-    };
+    const payload = { id, name: addr, address: geo.display, lat: geo.lat, lng: geo.lng, added_by: name||null, notes: notes||null, url: url||null };
+    const res = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if (!res.ok) { const j = await res.json().catch(()=>{}); throw new Error(j?.error || `Server error ${res.status}`); }
 
-    await saveCustomProp(data);
-
-    const p = customPropToLocal({ ...data });
+    const p = mapPropRow({ ...payload, sub_label: geo.display, price_str:'—', move_in:'—', status:'available', duplex_key:null, manager:'', sources:'Custom', is_custom:true, added_by: name||null });
     PROPS.push(p);
-    addCustomMarker(p);
+    renderMarkers();
     renderListView();
-
     closeModal();
     selectCustom(id);
     setTab('map');
@@ -934,14 +850,33 @@ async function submitCustomProp() {
   }
 }
 
-// Enter key submits modal
-document.getElementById('modal-addr').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
-document.getElementById('modal-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
-document.getElementById('modal-notes').addEventListener('keydown', e => { if (e.key === 'Enter') submitCustomProp(); });
+['modal-addr','modal-url','modal-name','modal-notes'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key==='Enter') submitCustomProp(); });
+});
+// Hide suggestions when addr input loses focus (small delay for click to register)
+document.getElementById('modal-addr').addEventListener('blur', () => {
+  setTimeout(() => document.getElementById('addr-suggestions').classList.remove('show'), 200);
+});
+
+// ── DB init ───────────────────────────────────────────────────────────────────
+async function initApp() {
+  try {
+    const res = await fetch(API);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    const { properties, landmarks } = await res.json();
+    DESTS = (landmarks || []).map(mapLandmarkRow);
+    PROPS = (properties || []).map(mapPropRow);
+  } catch(e) {
+    document.getElementById('loading-msg').textContent = `Failed to load: ${e.message}`;
+    return;
+  }
+  document.getElementById('loading-overlay').classList.add('hidden');
+  renderMarkers();
+  renderListView();
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-renderListView();
-loadCustomProps();
+initApp();
 
 // Swipe-down to close sheet
 let touchStartY = 0;
