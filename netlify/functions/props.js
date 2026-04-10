@@ -214,7 +214,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const sql = neon(process.env.DATABASE_URL);
+    const sql = neon(process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL);
     await initDb(sql);
 
     const slug = event.queryStringParameters?.workspace || DEFAULT_WORKSPACE.slug;
