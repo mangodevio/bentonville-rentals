@@ -7,7 +7,7 @@ const HEADERS = {
 };
 
 // ── Default workspace seed data ───────────────────────────────────────────────
-const DEFAULT_WORKSPACE = { id: 'a0000000-0000-0000-0000-000000000001', name: 'Bentonville 2026', slug: 'bentonville-2026', edit_token: 'rentmap2026' };
+const DEFAULT_WORKSPACE = { id: 'ws-bentonville-2026', name: 'Bentonville 2026', slug: 'bentonville-2026', edit_token: 'rentmap2026' };
 
 const DEFAULT_LANDMARKS = [
   { id:'mosque',  name:'Masjid',             address:'1801 SW 2nd St, Bentonville, AR',   lat:36.371887, lng:-94.234221, icon:'🕌', color:'#7c3aed' },
@@ -192,15 +192,18 @@ async function initDb(sql) {
   if (ws.length === 0) {
     await sql`INSERT INTO workspaces (id, name, slug, edit_token) VALUES (${DEFAULT_WORKSPACE.id}, ${DEFAULT_WORKSPACE.name}, ${DEFAULT_WORKSPACE.slug}, ${DEFAULT_WORKSPACE.edit_token})`;
 
-    for (const lm of DEFAULT_LANDMARKS) {
-      await sql`INSERT INTO landmarks (id, workspace_id, name, address, lat, lng, icon, color)
-                VALUES (${lm.id}, ${DEFAULT_WORKSPACE.id}, ${lm.name}, ${lm.address}, ${lm.lat}, ${lm.lng}, ${lm.icon}, ${lm.color})`;
-    }
+    // Batch all inserts in parallel — avoids sequential round-trips timing out
+    await Promise.all(DEFAULT_LANDMARKS.map(lm =>
+      sql`INSERT INTO landmarks (id, workspace_id, name, address, lat, lng, icon, color)
+          VALUES (${lm.id}, ${DEFAULT_WORKSPACE.id}, ${lm.name}, ${lm.address}, ${lm.lat}, ${lm.lng}, ${lm.icon}, ${lm.color})
+          ON CONFLICT (id) DO NOTHING`
+    ));
 
-    for (const p of DEFAULT_PROPERTIES) {
-      await sql`INSERT INTO properties (id, workspace_id, name, sub_label, lat, lng, price, price_str, beds, baths, sqft, move_in, status, duplex_key, manager, sources, notes, url, is_custom)
-                VALUES (${p.id}, ${DEFAULT_WORKSPACE.id}, ${p.name}, ${p.sub_label ?? ''}, ${p.lat}, ${p.lng}, ${p.price ?? null}, ${p.price_str}, ${p.beds}, ${p.baths}, ${p.sqft}, ${p.move_in}, ${p.status}, ${p.duplex_key ?? null}, ${p.manager}, ${p.sources}, ${p.notes}, ${p.url}, false)`;
-    }
+    await Promise.all(DEFAULT_PROPERTIES.map(p =>
+      sql`INSERT INTO properties (id, workspace_id, name, sub_label, lat, lng, price, price_str, beds, baths, sqft, move_in, status, duplex_key, manager, sources, notes, url, is_custom)
+          VALUES (${p.id}, ${DEFAULT_WORKSPACE.id}, ${p.name}, ${p.sub_label ?? ''}, ${p.lat}, ${p.lng}, ${p.price ?? null}, ${p.price_str}, ${p.beds}, ${p.baths}, ${p.sqft}, ${p.move_in}, ${p.status}, ${p.duplex_key ?? null}, ${p.manager}, ${p.sources}, ${p.notes}, ${p.url}, false)
+          ON CONFLICT (id) DO NOTHING`
+    ));
   }
 }
 
