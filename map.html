@@ -765,11 +765,12 @@ function onAddrInput(val) {
 async function fetchSuggestions(q) {
   const sug = document.getElementById('addr-suggestions');
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&countrycodes=us`, { headers:{'Accept-Language':'en'} });
+    const res = await fetch(`${API}?action=geocode&q=${encodeURIComponent(q)}`);
     const data = await res.json();
-    if (!data.length) { sug.classList.remove('show'); return; }
-    sug.innerHTML = data.map((r,i) =>
-      `<div class="addr-suggestion" onmousedown="pickSuggestion(${i})" data-lat="${r.lat}" data-lng="${r.lon}" data-display="${encodeURIComponent(r.display_name)}">${r.display_name}</div>`
+    const features = data.features || [];
+    if (!features.length) { sug.classList.remove('show'); return; }
+    sug.innerHTML = features.map((f,i) =>
+      `<div class="addr-suggestion" onmousedown="pickSuggestion(${i})" data-lat="${f.center[1]}" data-lng="${f.center[0]}" data-display="${encodeURIComponent(f.place_name)}">${f.place_name}</div>`
     ).join('');
     sug.classList.add('show');
   } catch(e) { sug.classList.remove('show'); }
@@ -821,10 +822,10 @@ async function submitCustomProp() {
     let geo = _acSelected;
     if (!geo) {
       setModalStatus('🔍 Geocoding address…');
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1&countrycodes=us`, { headers:{'Accept-Language':'en'} });
+      const res = await fetch(`${API}?action=geocode&q=${encodeURIComponent(addr)}&limit=1`);
       const data = await res.json();
-      if (!data.length) throw new Error('Address not found — be more specific or pick from dropdown');
-      geo = { lat: +data[0].lat, lng: +data[0].lon, display: data[0].display_name };
+      if (!data.features?.length) throw new Error('Address not found — be more specific or pick from dropdown');
+      geo = { lat: data.features[0].center[1], lng: data.features[0].center[0], display: data.features[0].place_name };
     }
 
     setModalStatus('💾 Saving…');

@@ -219,6 +219,17 @@ exports.handler = async (event) => {
 
     const slug = event.queryStringParameters?.workspace || DEFAULT_WORKSPACE.slug;
 
+    // ── Geocode proxy (keeps Mapbox token server-side) ──────────────────────────
+    if (event.httpMethod === 'GET' && event.queryStringParameters?.action === 'geocode') {
+      const q = event.queryStringParameters?.q || '';
+      const limit = event.queryStringParameters?.limit || '5';
+      const token = process.env.MAPBOX_TOKEN;
+      if (!token) return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: 'MAPBOX_TOKEN not set' }) };
+      const mbRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&country=us&limit=${limit}&types=address,poi`);
+      const mbData = await mbRes.json();
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify(mbData) };
+    }
+
     if (event.httpMethod === 'GET') {
       const [wsRows, properties, landmarks] = await Promise.all([
         sql`SELECT id, name, slug FROM workspaces WHERE slug = ${slug}`,
